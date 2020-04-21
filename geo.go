@@ -62,9 +62,10 @@ func New(dbURL string, syncInterval time.Duration, filePath string) Lookup {
 	if filePath != "" {
 		runner.InitFrom(keepcurrent.FromFile(filePath))
 	}
-	runner.OnSourceError = func(err error) {
+
+	runner.OnSourceError = keepcurrent.ExpBackoffThenFail(time.Minute, 5, func(err error) {
 		log.Errorf("Error fetching geo database: %v", err)
-	}
+	})
 	runner.Start(syncInterval)
 	return v
 }
