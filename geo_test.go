@@ -46,3 +46,23 @@ func doTestLookup(t *testing.T, l Lookup, ip string, expectedCountry string) {
 	country := l.CountryCode(net.ParseIP(ip))
 	assert.Equal(t, expectedCountry, country)
 }
+
+func TestLookupISP(t *testing.T) {
+	filePath := os.Getenv("GEOIP2_ISP_DB_PATH")
+	if filePath == "" {
+		t.Skip("require envvar GEOIP2_ISP_DB_PATH")
+	}
+	l, err := FromFile(filePath)
+	assert.NoError(t, err)
+
+	testLookupISP(t, l, "188.166.36.215", "DigitalOcean")
+	testLookupISP(t, l, "139.59.59.44", "Digital Ocean")
+	testLookupISP(t, l, "217.164.123.118", "Emirates Telecommunications Corporation")
+	testLookupISP(t, l, "87.107.251.220", "Soroush Rasanheh Company Ltd")
+	testLookupISP(t, l, "120.216.165.160", "China Mobile Guangdong")
+	testLookupISP(t, l, "adsfs423afsd234:2343", "")
+}
+
+func testLookupISP(t *testing.T, l Lookup, ip string, expectedISP string) {
+	assert.Equal(t, expectedISP, l.ISP(net.ParseIP(ip)))
+}
