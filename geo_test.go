@@ -20,7 +20,8 @@ func TestLookupCountry(t *testing.T) {
 	filePath := "GeoLite2-Country.mmdb"
 	defer os.Remove(filePath)
 	l := New(dbURL, time.Hour, filePath)
-	time.Sleep(20 * time.Second) // wait long enough to load database remotely
+	doTestLookup(t, l, "188.166.36.215", "")
+	<-l.Ready()
 	_, err := os.Stat(filePath)
 	assert.NoError(t, err, "should have cached the database locally")
 	doTestLookup(t, l, "188.166.36.215", "NL")
@@ -37,8 +38,10 @@ func TestLookupCountry(t *testing.T) {
 	doTestLookup(t, l, "adsfs423afsd234:2343", "")
 
 	// Make sure that when the local file exists, lookup works immediately.
+	start := time.Now()
 	l2 := New(dbURL, time.Hour, filePath)
-	time.Sleep(100 * time.Millisecond)
+	<-l2.Ready()
+	assert.Less(t, time.Since(start).Nanoseconds(), 100*time.Millisecond.Nanoseconds())
 	doTestLookup(t, l2, "188.166.36.215", "NL")
 }
 

@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -21,6 +22,9 @@ var (
 type Lookup interface {
 	CountryLookup
 	ISPLookup
+	// Ready returns a channel which is closed when the lookup is ready to
+	// serve requests.
+	Ready() <-chan struct{}
 }
 
 // CountryLookup allows looking up the country for an IP address
@@ -41,10 +45,17 @@ type NoLookup struct{}
 
 func (l NoLookup) CountryCode(ip net.IP) string { return "" }
 func (l NoLookup) ISP(ip net.IP) string         { return "" }
+func (l NoLookup) Ready() <-chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}
 
 type lookup struct {
-	runner *keepcurrent.Runner
-	db     atomic.Value
+	runner    *keepcurrent.Runner
+	db        atomic.Value
+	ready     chan struct{}
+	readyOnce sync.Once
 }
 
 // New constructs a new Lookup from the MaxMind GeoLite2 Country database
@@ -67,7 +78,7 @@ func FromWeb(dbURL string, nameInTarball string, syncInterval time.Duration, fil
 		runner = keepcurrent.New(source, dest)
 	}
 
-	v := &lookup{runner: runner}
+	v := &lookup{runner: runner, ready: make(chan struct{})}
 	go func() {
 		for data := range chDB {
 			db, err := geoip2.FromBytes(data)
@@ -75,6 +86,7 @@ func FromWeb(dbURL string, nameInTarball string, syncInterval time.Duration, fil
 				log.Errorf("Error loading geo database: %v", err)
 			} else {
 				v.db.Store(db)
+				v.readyOnce.Do(func() { close(v.ready) })
 			}
 		}
 	}()
@@ -105,8 +117,13 @@ func FromFile(filePath string) (*lookup, error) {
 	}
 	v := &lookup{}
 	v.db.Store(db)
+	close(v.ready)
 
 	return v, nil
+}
+
+func (l *lookup) Ready() <-chan struct{} {
+	return l.ready
 }
 
 func (l *lookup) CountryCode(ip net.IP) string {
