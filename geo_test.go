@@ -69,3 +69,13 @@ func TestLookupISP(t *testing.T) {
 func testLookupISP(t *testing.T, l Lookup, ip string, expectedISP string) {
 	assert.Equal(t, expectedISP, l.ISP(net.ParseIP(ip)))
 }
+
+func TestFromFile(t *testing.T) {
+	filePath := "./GeoIP2-ISP-Test.mmdb"
+	l, err := FromFile(filePath)
+	assert.NoError(t, err)
+
+	testLookupISP(t, l, "adsfs423afsd234:2343", "")
+	testLookupISP(t, l, "127.0.0.1", "")
+	testLookupISP(t, l, "1.1.1.1", "")
+}
