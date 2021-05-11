@@ -117,7 +117,6 @@ func FromFile(filePath string) (*lookup, error) {
 	}
 	v := &lookup{}
 	v.db.Store(db)
-	close(v.ready)
 
 	return v, nil
 }
