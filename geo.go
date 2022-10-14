@@ -19,6 +19,10 @@ var (
 	log = golog.LoggerFor("geo")
 )
 
+var (
+	testIP = net.ParseIP("8.8.8.8") // Google DNS
+)
+
 type Lookup interface {
 	CountryLookup
 	ISPLookup
@@ -62,13 +66,18 @@ type lookup struct {
 // fetched from the given URL and keeps in sync with it every syncInterval. If filePath
 // is not empty, it saves the database file to filePath and uses the file if
 // available.
-func New(dbURL string, syncInterval time.Duration, filePath string) *lookup {
-	return FromWeb(dbURL, "GeoLite2-Country.mmdb", syncInterval, filePath)
+// lookupForValidation is a function that we call to validate new databases as they're loaded.
+func New(dbURL string, syncInterval time.Duration, filePath string, lookupForValidation func(*geoip2.Reader) (string, error)) *lookup {
+	return FromWeb(dbURL, "GeoLite2-Country.mmdb", syncInterval, filePath, lookupForValidation)
 }
 
 // FromWeb is same as New but allows downloading a different MaxMind database
-func FromWeb(dbURL string, nameInTarball string, syncInterval time.Duration, filePath string) *lookup {
-	source := keepcurrent.FromTarGz(keepcurrent.FromWeb(dbURL), nameInTarball)
+// lookupForValidation is a function that we call to validate new databases as they're loaded.
+func FromWeb(dbURL string, nameInTarball string, syncInterval time.Duration, filePath string, lookupForValidation func(*geoip2.Reader) (string, error)) *lookup {
+	source := keepcurrent.ValidatingSource(
+		keepcurrent.FromTarGz(keepcurrent.FromWeb(dbURL), nameInTarball),
+		validator(lookupForValidation),
+	)
 	chDB := make(chan []byte)
 	dest := keepcurrent.ToChannel(chDB)
 	var runner *keepcurrent.Runner
@@ -147,4 +156,18 @@ func (l *lookup) ISP(ip net.IP) string {
 		return geoData.ISP
 	}
 	return ""
+}
+
+func validator(lookupForValidation func(db *geoip2.Reader) (string, error)) func([]byte) error {
+	return func(data []byte) error {
+		db, err := geoip2.FromBytes(data)
+		if err != nil {
+			return log.Errorf("db failed to open: %v", err)
+		}
+		_, err = lookupForValidation(db)
+		if err != nil {
+			return log.Errorf("db failed to validate: %v", err)
+		}
+		return nil
+	}
 }
