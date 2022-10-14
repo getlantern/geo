@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	github.com/getlantern/golog v0.0.0-20211223150227-d4d95a44d873
-	github.com/getlantern/keepcurrent v0.0.0-20221014010454-4cc03be22cbc
+	github.com/getlantern/keepcurrent v0.0.0-20221014183517-fcee77376b89
 	github.com/oschwald/geoip2-golang v1.4.0
 	github.com/stretchr/testify v1.8.0
 )
