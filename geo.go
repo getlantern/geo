@@ -19,6 +19,10 @@ var (
 	log = golog.LoggerFor("geo")
 )
 
+var (
+	testIP = net.ParseIP("8.8.8.8") // Google DNS
+)
+
 type Lookup interface {
 	CountryLookup
 	ISPLookup
@@ -62,20 +66,31 @@ type lookup struct {
 // fetched from the given URL and keeps in sync with it every syncInterval. If filePath
 // is not empty, it saves the database file to filePath and uses the file if
 // available.
-func New(dbURL string, syncInterval time.Duration, filePath string) *lookup {
-	return FromWeb(dbURL, "GeoLite2-Country.mmdb", syncInterval, filePath)
+// lookupForValidation is a function that we call to validate new databases as they're loaded.
+func New(dbURL string, syncInterval time.Duration, filePath string, lookupForValidation func(*geoip2.Reader, net.IP) (string, error)) *lookup {
+	return FromWeb(dbURL, "GeoLite2-Country.mmdb", syncInterval, filePath, lookupForValidation)
 }
 
 // FromWeb is same as New but allows downloading a different MaxMind database
-func FromWeb(dbURL string, nameInTarball string, syncInterval time.Duration, filePath string) *lookup {
+// lookupForValidation is a function that we call to validate new databases as they're loaded.
+func FromWeb(dbURL string, nameInTarball string, syncInterval time.Duration, filePath string, lookupForValidation func(*geoip2.Reader, net.IP) (string, error)) *lookup {
 	source := keepcurrent.FromTarGz(keepcurrent.FromWeb(dbURL), nameInTarball)
 	chDB := make(chan []byte)
 	dest := keepcurrent.ToChannel(chDB)
 	var runner *keepcurrent.Runner
 	if filePath != "" {
-		runner = keepcurrent.New(source, keepcurrent.ToFile(filePath), dest)
+		runner = keepcurrent.NewWithValidator(
+			validator(lookupForValidation),
+			source,
+			keepcurrent.ToFile(filePath),
+			dest,
+		)
 	} else {
-		runner = keepcurrent.New(source, dest)
+		runner = keepcurrent.NewWithValidator(
+			validator(lookupForValidation),
+			source,
+			dest,
+		)
 	}
 
 	v := &lookup{runner: runner, ready: make(chan struct{})}
@@ -94,8 +109,8 @@ func FromWeb(dbURL string, nameInTarball string, syncInterval time.Duration, fil
 		runner.InitFrom(keepcurrent.FromFile(filePath))
 	}
 
-	runner.OnSourceError = keepcurrent.ExpBackoffThenFail(time.Minute, 5, func(err error) {
-		log.Errorf("Error fetching geo database: %v", err)
+	runner.OnSourceError = keepcurrent.ExpBackoffThenFail(time.Minute, 30, func(err error) {
+		log.Errorf("Unrecoverable error fetching geo database: %v", err)
 	})
 	runner.Start(syncInterval)
 	return v
@@ -127,24 +142,53 @@ func (l *lookup) Ready() <-chan struct{} {
 
 func (l *lookup) CountryCode(ip net.IP) string {
 	if db := l.db.Load(); db != nil {
-		geoData, err := db.(*geoip2.Reader).Country(ip)
+		countryCode, err := CountryCode(db.(*geoip2.Reader), ip)
 		if err != nil {
-			log.Debugf("Unable to look up ip address %s: %s", ip, err)
 			return ""
 		}
-		return geoData.Country.IsoCode
+		return countryCode
 	}
 	return ""
 }
 
+func CountryCode(db *geoip2.Reader, ip net.IP) (string, error) {
+	geoData, err := db.Country(ip)
+	if err != nil {
+		return "", err
+	}
+	return geoData.Country.IsoCode, nil
+}
+
 func (l *lookup) ISP(ip net.IP) string {
 	if db := l.db.Load(); db != nil {
-		geoData, err := db.(*geoip2.Reader).ISP(ip)
+		isp, err := ISP(db.(*geoip2.Reader), ip)
 		if err != nil {
-			log.Debugf("Unable to look up ip address %s: %s", ip, err)
 			return ""
 		}
-		return geoData.ISP
+		return isp
 	}
 	return ""
+}
+
+func ISP(db *geoip2.Reader, ip net.IP) (string, error) {
+	geoData, err := db.ISP(ip)
+	if err != nil {
+		return "", err
+	}
+	return geoData.ISP, nil
+}
+
+func validator(lookupForValidation func(db *geoip2.Reader, ip net.IP) (string, error)) func([]byte) error {
+	return func(data []byte) error {
+		db, err := geoip2.FromBytes(data)
+		if err != nil {
+			return log.Errorf("db failed to open: %v", err)
+		}
+		_, err = lookupForValidation(db, testIP)
+		if err != nil {
+			return log.Errorf("db failed to validate: %v", err)
+		}
+		log.Debug("db validated")
+		return nil
+	}
 }
