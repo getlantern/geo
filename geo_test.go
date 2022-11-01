@@ -19,7 +19,7 @@ func TestLookupCountry(t *testing.T) {
 
 	filePath := "GeoLite2-Country.mmdb"
 	defer os.Remove(filePath)
-	l := New(dbURL, time.Hour, filePath)
+	l := New(dbURL, time.Hour, filePath, CountryCode)
 	doTestLookup(t, l, "188.166.36.215", "")
 	<-l.Ready()
 	_, err := os.Stat(filePath)
@@ -39,7 +39,7 @@ func TestLookupCountry(t *testing.T) {
 
 	// Make sure that when the local file exists, lookup works immediately.
 	start := time.Now()
-	l2 := New(dbURL, time.Hour, filePath)
+	l2 := New(dbURL, time.Hour, filePath, CountryCode)
 	<-l2.Ready()
 	assert.Less(t, time.Since(start).Nanoseconds(), 100*time.Millisecond.Nanoseconds())
 	doTestLookup(t, l2, "188.166.36.215", "NL")
@@ -65,6 +65,20 @@ func TestLookupISP(t *testing.T) {
 
 func testLookupISP(t *testing.T, l Lookup, ip string, expectedISP string) {
 	assert.Equal(t, expectedISP, l.ISP(net.ParseIP(ip)))
+}
+
+func TestLookupASN(t *testing.T) {
+	filePath := "GeoIP2-ISP-Test.mmdb"
+	l, err := FromFile(filePath)
+	assert.NoError(t, err)
+
+	testLookupASN(t, l, "217.164.123.118", "")
+	testLookupASN(t, l, "120.216.165.160", "AS9808")
+	testLookupASN(t, l, "adsfs423afsd234:2343", "")
+}
+
+func testLookupASN(t *testing.T, l Lookup, ip string, expectedASN string) {
+	assert.Equal(t, expectedASN, l.ASN(net.ParseIP(ip)))
 }
 
 func TestFromFile(t *testing.T) {

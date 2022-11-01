@@ -3,6 +3,7 @@
 package geo
 
 import (
+	"fmt"
 	"io/ioutil"
 	"net"
 	"os"
@@ -38,10 +39,13 @@ type CountryLookup interface {
 	CountryCode(ip net.IP) string
 }
 
-// ISPLookup allows looking up the ISP for an IP address
+// ISPLookup allows looking up ISP information for an IP address
 type ISPLookup interface {
 	// ISP looks up the ISP name for the given IP address and returns "" if there was an error.
 	ISP(ip net.IP) string
+
+	// ASN looks up the ASN number (e.g. AS62041) for the given IP address and returns "" if there was an error.
+	ASN(ip net.IP) string
 }
 
 // NoLookup is a Lookup implementation which always return empty result.
@@ -49,6 +53,7 @@ type NoLookup struct{}
 
 func (l NoLookup) CountryCode(ip net.IP) string { return "" }
 func (l NoLookup) ISP(ip net.IP) string         { return "" }
+func (l NoLookup) ASN(ip net.IP) string         { return "" }
 func (l NoLookup) Ready() <-chan struct{} {
 	ch := make(chan struct{})
 	close(ch)
@@ -176,6 +181,28 @@ func ISP(db *geoip2.Reader, ip net.IP) (string, error) {
 		return "", err
 	}
 	return geoData.ISP, nil
+}
+
+func (l *lookup) ASN(ip net.IP) string {
+	if db := l.db.Load(); db != nil {
+		isp, err := ASN(db.(*geoip2.Reader), ip)
+		if err != nil {
+			return ""
+		}
+		return isp
+	}
+	return ""
+}
+
+func ASN(db *geoip2.Reader, ip net.IP) (string, error) {
+	geoData, err := db.ASN(ip)
+	if err != nil {
+		return "", err
+	}
+	if geoData.AutonomousSystemNumber == 0 {
+		return "", nil
+	}
+	return fmt.Sprintf("AS%d", geoData.AutonomousSystemNumber), nil
 }
 
 func validator(lookupForValidation func(db *geoip2.Reader, ip net.IP) (string, error)) func([]byte) error {
