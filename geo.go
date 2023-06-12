@@ -11,9 +11,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	geoip2 "github.com/oschwald/geoip2-golang"
+
 	"github.com/getlantern/golog"
 	"github.com/getlantern/keepcurrent"
-	geoip2 "github.com/oschwald/geoip2-golang"
 )
 
 var (
@@ -79,11 +80,13 @@ func New(dbURL string, syncInterval time.Duration, filePath string, lookupForVal
 // FromWeb is same as New but allows downloading a different MaxMind database
 // lookupForValidation is a function that we call to validate new databases as they're loaded.
 func FromWeb(dbURL string, nameInTarball string, syncInterval time.Duration, filePath string, lookupForValidation func(*geoip2.Reader, net.IP) (string, error)) *lookup {
+	log.Debugf("Will look for updates at %v", dbURL)
 	source := keepcurrent.FromTarGz(keepcurrent.FromWeb(dbURL), nameInTarball)
 	chDB := make(chan []byte)
 	dest := keepcurrent.ToChannel(chDB)
 	var runner *keepcurrent.Runner
 	if filePath != "" {
+		log.Debugf("Will save database to %v", filePath)
 		runner = keepcurrent.NewWithValidator(
 			validator(lookupForValidation),
 			source,
@@ -101,6 +104,7 @@ func FromWeb(dbURL string, nameInTarball string, syncInterval time.Duration, fil
 	v := &lookup{runner: runner, ready: make(chan struct{})}
 	go func() {
 		for data := range chDB {
+			log.Debugf("Got database of size %v", len(data))
 			db, err := geoip2.FromBytes(data)
 			if err != nil {
 				log.Errorf("Error loading geo database: %v", err)
