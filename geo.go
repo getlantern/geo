@@ -4,7 +4,7 @@ package geo
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"os"
 	"sync"
@@ -28,6 +28,7 @@ var (
 type Lookup interface {
 	CountryLookup
 	ISPLookup
+	CityLookup
 	// Ready returns a channel which is closed when the lookup is ready to
 	// serve requests.
 	Ready() <-chan struct{}
@@ -47,6 +48,11 @@ type ISPLookup interface {
 
 	// ASN looks up the ASN number (e.g. AS62041) for the given IP address and returns "" if there was an error.
 	ASN(ip net.IP) string
+}
+
+type CityLookup interface {
+	// City looks up the city and country for the given IP address and returns "" if there was an error.
+	City(ip net.IP) (string, string)
 }
 
 // NoLookup is a Lookup implementation which always return empty result.
@@ -131,7 +137,7 @@ func FromFile(filePath string) (*lookup, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err := ioutil.ReadAll(f)
+	data, err := io.ReadAll(f)
 	if err != nil {
 		return nil, err
 	}
