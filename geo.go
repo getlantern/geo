@@ -160,6 +160,25 @@ func (l *lookup) CountryCode(ip net.IP) string {
 	return ""
 }
 
+func City(db *geoip2.Reader, ip net.IP) (string, string, error) {
+	geoData, err := db.City(ip)
+	if err != nil {
+		return "", "", err
+	}
+	return geoData.City.Names["en"], geoData.Country.Names["en"], nil
+}
+
+func (l *lookup) City(ip net.IP) (string, string) {
+	if db := l.db.Load(); db != nil {
+		city, country, err := City(db.(*geoip2.Reader), ip)
+		if err != nil {
+			return "", ""
+		}
+		return city, country
+	}
+	return "", ""
+}
+
 func CountryCode(db *geoip2.Reader, ip net.IP) (string, error) {
 	geoData, err := db.Country(ip)
 	if err != nil {
