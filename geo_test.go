@@ -90,3 +90,17 @@ func TestFromFile(t *testing.T) {
 	testLookupISP(t, l, "127.0.0.1", "")
 	testLookupISP(t, l, "1.1.1.1", "")
 }
+
+func TestLookupCity(t *testing.T) {
+	filePath := "./GeoIP2-City-Test.mmdb"
+	l, err := FromFile(filePath)
+	assert.NoError(t, err)
+
+	testLookupCity(t, l, "81.2.69.142", "London", "United Kingdom")
+}
+
+func testLookupCity(t *testing.T, l Lookup, ip string, expectedCity, expectedCountry string) {
+	city, country := l.City(net.ParseIP(ip))
+	assert.Equal(t, expectedCity, city)
+	assert.Equal(t, expectedCountry, country)
+}

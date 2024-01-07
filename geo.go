@@ -58,14 +58,17 @@ type CityLookup interface {
 // NoLookup is a Lookup implementation which always return empty result.
 type NoLookup struct{}
 
-func (l NoLookup) CountryCode(ip net.IP) string { return "" }
-func (l NoLookup) ISP(ip net.IP) string         { return "" }
-func (l NoLookup) ASN(ip net.IP) string         { return "" }
+func (l NoLookup) CountryCode(ip net.IP) string    { return "" }
+func (l NoLookup) ISP(ip net.IP) string            { return "" }
+func (l NoLookup) ASN(ip net.IP) string            { return "" }
+func (l NoLookup) City(ip net.IP) (string, string) { return "", "" }
 func (l NoLookup) Ready() <-chan struct{} {
 	ch := make(chan struct{})
 	close(ch)
 	return ch
 }
+
+var _ Lookup = NoLookup{}
 
 type lookup struct {
 	runner    *keepcurrent.Runner
