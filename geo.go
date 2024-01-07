@@ -29,6 +29,7 @@ type Lookup interface {
 	CountryLookup
 	ISPLookup
 	CityLookup
+	LatLongLookup
 	// Ready returns a channel which is closed when the lookup is ready to
 	// serve requests.
 	Ready() <-chan struct{}
@@ -51,17 +52,23 @@ type ISPLookup interface {
 }
 
 type CityLookup interface {
-	// City looks up the city and country for the given IP address and returns "" if there was an error.
+	// City looks up the city and country for the given IP address and returns "", "" if there was an error.
 	City(ip net.IP) (string, string)
+}
+
+type LatLongLookup interface {
+	// LatLong looks up the latitude and longitude for the given IP address and returns 0, 0 if there was an error.
+	LatLong(ip net.IP) (float64, float64)
 }
 
 // NoLookup is a Lookup implementation which always return empty result.
 type NoLookup struct{}
 
-func (l NoLookup) CountryCode(ip net.IP) string    { return "" }
-func (l NoLookup) ISP(ip net.IP) string            { return "" }
-func (l NoLookup) ASN(ip net.IP) string            { return "" }
-func (l NoLookup) City(ip net.IP) (string, string) { return "", "" }
+func (l NoLookup) CountryCode(ip net.IP) string         { return "" }
+func (l NoLookup) ISP(ip net.IP) string                 { return "" }
+func (l NoLookup) ASN(ip net.IP) string                 { return "" }
+func (l NoLookup) City(ip net.IP) (string, string)      { return "", "" }
+func (l NoLookup) LatLong(ip net.IP) (float64, float64) { return 0, 0 }
 func (l NoLookup) Ready() <-chan struct{} {
 	ch := make(chan struct{})
 	close(ch)
@@ -186,6 +193,25 @@ func (l *lookup) City(ip net.IP) (string, string) {
 		return city, country
 	}
 	return "", ""
+}
+
+func LatLong(db *geoip2.Reader, ip net.IP) (float64, float64, error) {
+	geoData, err := db.City(ip)
+	if err != nil {
+		return 0, 0, err
+	}
+	return geoData.Location.Latitude, geoData.Location.Longitude, nil
+}
+
+func (l *lookup) LatLong(ip net.IP) (float64, float64) {
+	if db := l.db.Load(); db != nil {
+		lat, long, err := LatLong(db.(*geoip2.Reader), ip)
+		if err != nil {
+			return 0, 0
+		}
+		return lat, long
+	}
+	return 0, 0
 }
 
 func CountryCode(db *geoip2.Reader, ip net.IP) (string, error) {

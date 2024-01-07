@@ -104,3 +104,17 @@ func testLookupCity(t *testing.T, l Lookup, ip string, expectedCity, expectedCou
 	assert.Equal(t, expectedCity, city)
 	assert.Equal(t, expectedCountry, country)
 }
+
+func TestLookupLatLong(t *testing.T) {
+	filePath := "./GeoIP2-City-Test.mmdb"
+	l, err := FromFile(filePath)
+	assert.NoError(t, err)
+
+	testLookupLatLong(t, l, "81.2.69.142", 51.5142, -0.0931)
+}
+
+func testLookupLatLong(t *testing.T, l Lookup, ip string, expectedLat, expectedLong float64) {
+	lat, long := l.LatLong(net.ParseIP(ip))
+	assert.Equal(t, expectedLat, lat)
+	assert.Equal(t, expectedLong, long)
+}
