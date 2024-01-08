@@ -141,6 +141,54 @@ func FromWeb(dbURL string, nameInTarball string, syncInterval time.Duration, fil
 	return v
 }
 
+// LatLongFromWeb is same as New but allows downloading a different MaxMind database for lat/long lookup
+// lookupForValidation is a function that we call to validate new databases as they're loaded.
+func LatLongFromWeb(dbURL string, nameInTarball string, syncInterval time.Duration, filePath string, lookupForValidation func(*geoip2.Reader, net.IP) (float64, float64, error)) *lookup {
+	log.Debugf("Will look for updates at %v", dbURL)
+	source := keepcurrent.FromTarGz(keepcurrent.FromWeb(dbURL), nameInTarball)
+	chDB := make(chan []byte)
+	dest := keepcurrent.ToChannel(chDB)
+	var runner *keepcurrent.Runner
+	if filePath != "" {
+		log.Debugf("Will save database to %v", filePath)
+		runner = keepcurrent.NewWithValidator(
+			latLongValidator(lookupForValidation),
+			source,
+			keepcurrent.ToFile(filePath),
+			dest,
+		)
+	} else {
+		runner = keepcurrent.NewWithValidator(
+			latLongValidator(lookupForValidation),
+			source,
+			dest,
+		)
+	}
+
+	v := &lookup{runner: runner, ready: make(chan struct{})}
+	go func() {
+		for data := range chDB {
+			log.Debugf("Got database of size %v", len(data))
+			db, err := geoip2.FromBytes(data)
+			if err != nil {
+				log.Errorf("Error loading geo database: %v", err)
+			} else {
+				v.db.Store(db)
+				v.readyOnce.Do(func() { close(v.ready) })
+			}
+		}
+	}()
+	if filePath != "" {
+		runner.InitFrom(keepcurrent.FromFile(filePath))
+	}
+
+	runner.OnSourceError = keepcurrent.ExpBackoffThenFail(time.Minute, 30, func(err error) {
+		log.Errorf("Unrecoverable error fetching geo database: %v", err)
+	})
+	runner.Start(syncInterval)
+	return v
+}
+
 // FromFile uses the local database file for lookup
 func FromFile(filePath string) (*lookup, error) {
 	f, err := os.Open(filePath)
@@ -270,6 +318,21 @@ func validator(lookupForValidation func(db *geoip2.Reader, ip net.IP) (string, e
 			return log.Errorf("db failed to open: %v", err)
 		}
 		_, err = lookupForValidation(db, testIP)
+		if err != nil {
+			return log.Errorf("db failed to validate: %v", err)
+		}
+		log.Debug("db validated")
+		return nil
+	}
+}
+
+func latLongValidator(lookupForValidation func(db *geoip2.Reader, ip net.IP) (float64, float64, error)) func([]byte) error {
+	return func(data []byte) error {
+		db, err := geoip2.FromBytes(data)
+		if err != nil {
+			return log.Errorf("db failed to open: %v", err)
+		}
+		_, _, err = lookupForValidation(db, testIP)
 		if err != nil {
 			return log.Errorf("db failed to validate: %v", err)
 		}
