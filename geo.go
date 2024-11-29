@@ -265,7 +265,11 @@ func (l *lookup) LatLong(ip net.IP) (float64, float64) {
 func CountryCode(db *geoip2.Reader, ip net.IP) (string, error) {
 	geoData, err := db.Country(ip)
 	if err != nil {
-		return "", err
+		return "", log.Errorf("db failed for ip %s to get country error is: %v", ip.String(), err)
+	}
+
+	if geoData.Country.IsoCode == "" {
+		return geoData.Country.IsoCode, log.Error(fmt.Errorf("empty country iso code for IP: %s", ip.String()))
 	}
 	return geoData.Country.IsoCode, nil
 }
